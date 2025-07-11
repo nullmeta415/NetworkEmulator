@@ -1,10 +1,132 @@
 #include "Node.h"
 #include "NetworkMedium.h"
-#include <iostream>
 #include <thread> // For std::this_thread::sleep_for
 #include <chrono> // For std::chrono::seconds
+#include <iostream>    // For std::cout, std::cerr, std::endl
+#include <string>      // For std::string
+#include <vector>      // For std::vector
+#include <array>       // For std::array (MacAddress)
+#include <cstdint>     // For uint8_t, uint16_t (used in MacAddress, calculateChecksum)
+#include <chrono>      // For std::chrono::milliseconds (for future simulation pauses)
+#include <thread>      // For std::this_thread::sleep_for (for future simulation pauses)
 
-int main(){
+// Include the header that declares MacUtil functions and EthernetFrame class.
+// This is crucial for main.cpp to know about them.
+#include "EthernetFrame.h" // This header indirectly brings in MacAddress and MacUtil namespace.
+
+// Forward declarations for Node and NetworkMedium (from Phase 1).
+// We declare them here because main.cpp will eventually use them, but we don't
+// need their full definitions in this file (only their names). This avoids
+// needing to include their .h files if we're just testing MacUtil for now.
+class NetworkMedium;
+class Node;
+
+// -----------------------------------------------------------------------------
+// Function: testMacUtil
+// Purpose: Contains a suite of tests for the MacUtil namespace functions
+//          (macToString, stringToMac, calculateChecksum).
+// -----------------------------------------------------------------------------
+void testMacUtil() {
+    std::cout << "========================================" << std::endl;
+    std::cout << "          Testing MacUtil Functions         " << std::endl;
+    std::cout << "========================================" << std::endl;
+
+    // --- Test macToString ---
+    std::cout << "\n--- Testing macToString (MacAddress to String) ---" << std::endl;
+
+    // Test Case 1: All zeros MAC address
+    MacAddress mac1 = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    std::cout << "Input: {0x00,0x00,0x00,0x00,0x00,0x00} -> Output: " << MacUtil::macToString(mac1) << " (Expected: 00:00:00:00:00:00)" << std::endl;
+
+    // Test Case 2: Single-digit hex values
+    MacAddress mac2 = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
+    std::cout << "Input: {0x01,0x02,0x03,0x04,0x05,0x06} -> Output: " << MacUtil::macToString(mac2) << " (Expected: 01:02:03:04:05:06)" << std::endl;
+
+    // Test Case 3: All uppercase hex values
+    MacAddress mac3 = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
+    std::cout << "Input: {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF} -> Output: " << MacUtil::macToString(mac3) << " (Expected: AA:BB:CC:DD:EE:FF)" << std::endl;
+
+    // Test Case 4: Mixed hex values
+    MacAddress mac4 = {0x1A, 0x2B, 0x3C, 0x4D, 0x5E, 0x6F};
+    std::cout << "Input: {0x1A,0x2B,0x3C,0x4D,0x5E,0x6F} -> Output: " << MacUtil::macToString(mac4) << " (Expected: 1A:2B:3C:4D:5E:6F)" << std::endl;
+
+    // --- Test stringToMac ---
+    std::cout << "\n--- Testing stringToMac (String to MacAddress) ---" << std::endl;
+
+    std::cout << "\n--- Valid Inputs (Expected: No errors, correct parsing) ---" << std::endl;
+    std::vector<std::string> validMacStrings = {
+        "00:00:00:00:00:00",
+        "01:02:03:04:05:06",
+        "AA:BB:CC:DD:EE:FF",
+        "aa:bb:cc:dd:ee:ff", // Test lowercase hex input (should still parse correctly)
+        "1A:2B:3C:4D:5E:6F"
+    };
+
+    for (const auto& strMac : validMacStrings) {
+        MacAddress parsedMac = MacUtil::stringToMac(strMac);
+        std::cout << "Parsed '" << strMac << "' -> " << MacUtil::macToString(parsedMac) << std::endl;
+        // For a more robust test, you could compare the original string (converted to uppercase)
+        // with the result of macToString(parsedMac).
+        // Example: assert(MacUtil::macToString(parsedMac) == strMac.data() || strMac.data().toupper() );
+    }
+
+    std::cout << "\n--- Invalid Inputs (Expected: Error messages to std::cerr, all-zeros MacAddress) ---" << std::endl;
+    std::vector<std::string> invalidMacStrings = {
+        "00:11:22:33:44",          // Too short (missing last byte and colon)
+        "00:11:22:33:44:55:66",    // Too long (extra byte at end)
+        "00:11:22:XX:YY:ZZ",      // Invalid hex characters (XX, YY, ZZ)
+        "00-11-22-33-44-55",      // Wrong separator (dashes instead of colons)
+        "00:11:22:AA:BB:CC:EXTRA", // Extra characters at end
+        "00:11:22:AA:BB:GG",      // Invalid hex digit 'G' in last byte
+        "00:11:22:AA:BB:C",       // Missing last digit in last byte (e.g., 'C' instead of '0C')
+        "00:11:22:AA:BB:100"      // Byte value out of range (100 is 256 decimal, > 255)
+    };
+
+    for (const auto& strMac : invalidMacStrings) {
+        std::cout << "Attempting to parse invalid: '" << strMac << "'" << std::endl;
+        MacAddress parsedMac = MacUtil::stringToMac(strMac);
+        std::cout << "Result (should be all zeros): " << MacUtil::macToString(parsedMac) << std::endl;
+        std::cout << "--------------------------------------------------------" << std::endl;
+    }
+
+    // --- Test calculateChecksum ---
+    std::cout << "\n--- Testing calculateChecksum ---" << std::endl;
+
+    std::vector<char> data1 = {}; // Empty
+    std::cout << "Checksum of empty data: " << MacUtil::calculateChecksum(data1) << " (Expected: 0)" << std::endl;
+
+    std::vector<char> data2 = {'A'}; // ASCII 'A' is 65
+    std::cout << "Checksum of {'A'}: " << MacUtil::calculateChecksum(data2) << " (Expected: 65)" << std::endl;
+
+    std::vector<char> data3 = {'H', 'e', 'l', 'l', 'o'}; // 72+101+108+108+111 = 500
+    std::cout << "Checksum of {'H','e','l','l','o'}: " << MacUtil::calculateChecksum(data3) << " (Expected: 500)" << std::endl;
+
+    // Test with unsigned char values that might be interpreted as negative if not cast
+    std::vector<char> data4 = {(char)0xFF, (char)0x01}; // 0xFF is 255, 0x01 is 1. Sum = 256.
+    std::cout << "Checksum of {0xFF, 0x01}: " << MacUtil::calculateChecksum(data4) << " (Expected: 256)" << std::endl;
+
+    std::vector<char> data5 = {(char)0x80, (char)0x80}; // 128 + 128 = 256
+    std::cout << "Checksum of {0x80, 0x80}: " << MacUtil::calculateChecksum(data5) << " (Expected: 256)" << std::endl;
+
+
+    std::cout << "\n========================================" << std::endl;
+    std::cout << "   All MacUtil Tests Completed Successfully! " << std::endl;
+    std::cout << "========================================" << std::endl;
+}
+
+// -----------------------------------------------------------------------------
+// Main Function for the Network Emulator Project
+// This function serves as the entry point and orchestrator for the simulation.
+// In Phase 2, it primarily runs the tests for MacUtil functions.
+// In future phases, it will set up and run the full network simulation.
+// -----------------------------------------------------------------------------
+int main() {
+    // Run the comprehensive test suite for MacUtil functions.
+    testMacUtil();
+
+    // Placeholder for Phase 1 main logic (will be removed/modified in future phases)
+    // For now, it's commented out as we focus on MacUtil tests.
+    /*
     std::cout << "--- Starting Network Emulator Phase 1 ---" << std::endl;
     // 1. Create the shared Network Medium
     NetworkMedium medium;
@@ -40,7 +162,9 @@ int main(){
     }
 
     std::cout << "\n--- End of Network Emulator Phase 1 ---" << std::endl;
-    return 0;
+    */
+
+    return 0; // Indicate successful program execution.
 }
 
 /*
