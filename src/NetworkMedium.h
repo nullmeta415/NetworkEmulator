@@ -18,9 +18,7 @@ public:
 The NetworkMedium class simulates a shared physical communication channel where all nodes can send and receive RawPackets.
 */
 
-// A constant to represent an empty or invalid packet.
 // Used by receivePacket() to signal that no packet was available.
-static const RawPacket EMPTY_PACKET;
 
 class NetworkMedium{
 private:
