@@ -39,8 +39,14 @@ The project is organized into a clean and professional directory structure to en
 
 **What it is:** A `RawPacket` is the most basic unit of data our `NetworkMedium` can transport. It is a simple container, represented as a `std::vector<char>`, that holds a sequence of raw bytes. This `std::vector<char>` is a perfect tool for this purpose because it can hold any sequence of bytes (a `char` is a single byte in C++) and its size can change dynamically, accommodating messages of different lengths.
 
-**Purpose:** The `RawPacket` serves as the fundamental "envelope" for data. It represents the raw bitstream that would travel over a real physical medium before any higher-layer protocols (like the Data Link Layer) add structure to it.
+**Purpose:** The `RawPacket` serves as the fundamental "envelope" for data. It represents the raw bitstream that would travel over a real physical medium before any higher-layer protocols (like the Data Link Layer) add structure to it. The sole purpose is to hold the raw bytes.
 
+```cpp
+class RawPacket {
+public:
+    std::vector<char> data;
+};
+```
 ---
 
 ## 4. The Network Endpoints & Project Scope
@@ -48,3 +54,33 @@ The project is organized into a clean and professional directory structure to en
 **The `Node` Class:** The `Node` class represents a single device or computer connected to our simulated network. A `Node` acts as the interface between the application layer and the underlying network layers, originating and consuming data.
 
 **Project Scope:** This project will focus on building a simplified, multi-node network emulator that simulates the basic functionality of the **Data Link Layer**. We will build the components that allow nodes to send and receive data frames, handle addressing, and detect basic errors.
+
+---
+
+## 5. The `NetworkMedium` Class
+
+### 5.1 What is the NetworkMedium?
+
+**Conceptual Role:** The `NetworkMedium` class simulates a shared physical communication channel, such as an Ethernet cable or a Wi-Fi signal. In a real network, all devices on a local network segment share the same medium.
+
+**Our Simulation:** In our project, all `Node` objects will have access to a single, shared `NetworkMedium` object. When a `Node` "sends" a packet, it places it onto the `NetworkMedium`, and when a `Node` wants to "receive," it retrieves a packet from the medium. This decouples the sender from the receiver, just like a real network.
+
+### 5.2 Implementation Choices
+
+To simulate a channel where packets are sent and received in order, the best C++ tool for the job is `std::queue`.
+
+* **`std::queue<T>`:** This is a C++ Standard Library container adapter. It provides a FIFO (First-In, First-Out) data structure.
+    * **"First-In, First-Out":** The first element added to the queue is always the first one to be removed.
+    * **Why we use it:** This behavior perfectly models a communication channel. Packets sent by a Node are placed at the back of the queue (the "send" operation), and packets are retrieved from the front of the queue (the "receive" operation). This ensures that the order of delivery is maintained.
+
+* **`std::vector<char>` vs. `std::queue<RawPacket>`:**
+    * A `std::vector` is great for holding a contiguous sequence of elements, like the bytes inside a single `RawPacket`.
+    * A `std::queue` is a better tool for managing a collection of `RawPacket`s in the order they were sent.
+
+### 5.3 The Public Interface of NetworkMedium
+
+A well-designed class has a clear public interface. For the `NetworkMedium`, we will have three simple functions:
+
+* `void sendPacket(const RawPacket& packet)`: This function will be called by a `Node` to send a packet. It will take a `RawPacket` as input and place it into our queue.
+* `RawPacket receivePacket()`: This function will be called by a `Node` to retrieve a packet. It will take the first packet from the queue and return it.
+* `bool hasPackets() const`: This simple function will let a `Node` check if there are any packets waiting in the queue before attempting to receive one.
